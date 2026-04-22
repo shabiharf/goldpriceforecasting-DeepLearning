@@ -76,12 +76,23 @@ def try_fetch_yfinance(start_date="2015-01-01", end_date=None):
         end_date = datetime.now().strftime("%Y-%m-%d")
 
     try:
+        # Pakai curl_cffi session untuk impersonate browser — bypass cloud IP blocks
+        session = None
+        try:
+            from curl_cffi import requests as curl_requests
+            session = curl_requests.Session(impersonate="chrome")
+        except ImportError:
+            pass  # fallback ke default requests kalau curl_cffi tidak ada
+
         gold_usd = yf.download("GC=F", start=start_date, end=end_date,
-                                auto_adjust=True, progress=False)["Close"].squeeze()
+                                auto_adjust=True, progress=False,
+                                session=session)["Close"].squeeze()
         usdidr = yf.download("IDR=X", start=start_date, end=end_date,
-                              auto_adjust=True, progress=False)["Close"].squeeze()
+                              auto_adjust=True, progress=False,
+                              session=session)["Close"].squeeze()
         ihsg = yf.download("^JKSE", start=start_date, end=end_date,
-                            auto_adjust=True, progress=False)["Close"].squeeze()
+                            auto_adjust=True, progress=False,
+                            session=session)["Close"].squeeze()
 
         if len(gold_usd) < 60 or len(usdidr) < 60 or len(ihsg) < 60:
             return None
