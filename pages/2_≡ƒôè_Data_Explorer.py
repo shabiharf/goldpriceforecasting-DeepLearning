@@ -1,6 +1,5 @@
 """
-Halaman Data Explorer — Exploratory Data Analysis
-Time series, correlation, autocorrelation, statistik deskriptif.
+Halaman Data Explorer v3 — EDA dengan tambahan ADF Test dan Log Return.
 """
 import sys
 from pathlib import Path
@@ -11,7 +10,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from utils import load_historical_data, get_market_data
+from utils import load_historical_data, get_market_data, ADF_RESULTS
 
 st.set_page_config(page_title="Data Explorer · Gold Forecast", page_icon="📊", layout="wide")
 
@@ -25,6 +24,22 @@ st.markdown("""
         padding: 12px;
         border-radius: 10px;
         border: 0.5px solid #2a3038;
+    }
+    .stat-badge-yes {
+        display: inline-block;
+        background: #1d9e75;
+        color: white;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 10px;
+    }
+    .stat-badge-no {
+        display: inline-block;
+        background: #c0392b;
+        color: white;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -67,9 +82,10 @@ with col4:
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📈 Time Series",
     "🔗 Korelasi",
+    "🧪 Uji Stasioneritas (ADF)",
     "📉 Autokorelasi (ACF/PACF)",
     "📋 Statistik Deskriptif",
 ])
@@ -88,20 +104,12 @@ with tab1:
         ),
     )
 
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["Gold_IDR_gram"],
-        name="Emas", line=dict(color="#f5c441", width=1),
-    ), row=1, col=1)
-
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["USDIDR"],
-        name="USD/IDR", line=dict(color="#4a90e2", width=1),
-    ), row=2, col=1)
-
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["IHSG"],
-        name="IHSG", line=dict(color="#2ecc71", width=1),
-    ), row=3, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df["Gold_IDR_gram"],
+                              name="Emas", line=dict(color="#f5c441", width=1)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df["USDIDR"],
+                              name="USD/IDR", line=dict(color="#4a90e2", width=1)), row=2, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df["IHSG"],
+                              name="IHSG", line=dict(color="#2ecc71", width=1)), row=3, col=1)
 
     fig.update_layout(
         template="plotly_dark",
@@ -115,33 +123,19 @@ with tab1:
     for r in range(1, 4):
         fig.update_xaxes(gridcolor="#2a3038", row=r, col=1)
         fig.update_yaxes(gridcolor="#2a3038", row=r, col=1, tickformat=",.0f")
-
     st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("""
-    **Observasi:**
-    - **Emas** menunjukkan tren naik kuat mulai 2020, mencapai puncak tertinggi di akhir periode
-    - **USD/IDR** fluktuatif dengan kecenderungan depresiasi rupiah
-    - **IHSG** menunjukkan volatility tinggi dengan drop signifikan di 2020 (pandemi)
-    """)
 
 with tab2:
     st.markdown("### Matriks Korelasi Pearson")
-
     corr_matrix = df.corr(method="pearson")
 
     col_corr, col_info = st.columns([2, 1])
-
     with col_corr:
         fig_heatmap = go.Figure(data=go.Heatmap(
             z=corr_matrix.values,
             x=["Harga Emas", "USD/IDR", "IHSG"],
             y=["Harga Emas", "USD/IDR", "IHSG"],
-            colorscale=[
-                [0, "#c0392b"],
-                [0.5, "#2c3e50"],
-                [1, "#27ae60"],
-            ],
+            colorscale=[[0, "#c0392b"], [0.5, "#2c3e50"], [1, "#27ae60"]],
             zmin=-1, zmax=1,
             text=corr_matrix.round(4).values,
             texttemplate="%{text}",
@@ -161,79 +155,110 @@ with tab2:
         st.markdown("**Interpretasi:**")
         r_gold_usd = corr_matrix.loc["Gold_IDR_gram", "USDIDR"]
         r_gold_ihsg = corr_matrix.loc["Gold_IDR_gram", "IHSG"]
-        r_usd_ihsg = corr_matrix.loc["USDIDR", "IHSG"]
-
         st.markdown(f"""
         - **Emas ↔ USD/IDR**: r = **{r_gold_usd:.4f}** (sangat kuat positif)
-          Ketika rupiah melemah, harga emas IDR meningkat.
-
         - **Emas ↔ IHSG**: r = **{r_gold_ihsg:.4f}** (kuat positif)
-          Emas dan IHSG cenderung bergerak searah dalam jangka panjang.
-
-        - **USD/IDR ↔ IHSG**: r = **{r_usd_ihsg:.4f}** (kuat positif)
-          Weakening rupiah beriringan dengan penguatan IHSG (inflation effect).
         """)
 
-    st.markdown("---")
-    st.markdown("### Scatter Plot")
-    scatter_choice = st.selectbox(
-        "Plot hubungan:",
-        ["Emas vs USD/IDR", "Emas vs IHSG", "USD/IDR vs IHSG"]
-    )
-
-    pairs = {
-        "Emas vs USD/IDR": ("Gold_IDR_gram", "USDIDR", "Harga Emas (IDR/gram)", "USD/IDR"),
-        "Emas vs IHSG": ("Gold_IDR_gram", "IHSG", "Harga Emas (IDR/gram)", "IHSG"),
-        "USD/IDR vs IHSG": ("USDIDR", "IHSG", "USD/IDR", "IHSG"),
-    }
-    xcol, ycol, xlabel, ylabel = pairs[scatter_choice]
-
-    fig_scatter = go.Figure()
-    fig_scatter.add_trace(go.Scatter(
-        x=df[xcol], y=df[ycol],
-        mode="markers",
-        marker=dict(size=4, color=df.index.year, colorscale="Viridis",
-                    showscale=True, colorbar=dict(title="Tahun")),
-        name=scatter_choice,
-    ))
-    fig_scatter.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="#1a2028",
-        plot_bgcolor="#1a2028",
-        height=400,
-        xaxis=dict(title=xlabel, gridcolor="#2a3038"),
-        yaxis=dict(title=ylabel, gridcolor="#2a3038"),
-        margin=dict(l=40, r=40, t=20, b=40),
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
-
 with tab3:
+    st.markdown("### Augmented Dickey-Fuller (ADF) Test")
+    st.markdown("""
+    **Hipotesis:**
+    - H₀: Data **non-stasioner** (memiliki unit root)
+    - H₁: Data **stasioner**
+
+    Keputusan: tolak H₀ jika **p-value < 0.05** atau ADF statistic < critical value (5%).
+    """)
+
+    st.markdown("#### 1. Data Mentah (sebelum transformasi)")
+    raw = ADF_RESULTS["raw"]
+
+    cols_raw = st.columns(3)
+    for col, (var_name, result) in zip(cols_raw, raw.items()):
+        with col:
+            badge = '<span class="stat-badge-yes">✅ STASIONER</span>' if result["stationary"] \
+                    else '<span class="stat-badge-no">❌ NON-STASIONER</span>'
+            st.markdown(f"""
+            <div style="background:#1a2028;border:0.5px solid #2a3038;border-radius:10px;padding:14px;">
+                <strong>{var_name}</strong><br>
+                <span style="color:#888;font-size:13px;">ADF stat: <code>{result['adf_stat']:.4f}</code></span><br>
+                <span style="color:#888;font-size:13px;">p-value: <code>{result['p_value']:.6f}</code></span><br><br>
+                {badge}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("")
+    st.markdown("#### 2. Setelah Log Return Transformation")
+    st.markdown("Log return: $r_t = \\ln(P_t / P_{t-1})$ — transformasi standar untuk stasionerisasi data finansial.")
+
+    log_ret = ADF_RESULTS["log_return"]
+    cols_log = st.columns(3)
+    for col, (var_name, result) in zip(cols_log, log_ret.items()):
+        with col:
+            badge = '<span class="stat-badge-yes">✅ STASIONER</span>' if result["stationary"] \
+                    else '<span class="stat-badge-no">❌ NON-STASIONER</span>'
+            st.markdown(f"""
+            <div style="background:#1a2028;border:0.5px solid #1d9e75;border-radius:10px;padding:14px;">
+                <strong>{var_name}</strong><br>
+                <span style="color:#888;font-size:13px;">ADF stat: <code>{result['adf_stat']:.4f}</code></span><br>
+                <span style="color:#888;font-size:13px;">p-value: <code>{result['p_value']:.6f}</code></span><br><br>
+                {badge}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("")
+    st.markdown("#### 3. Ringkasan & Implikasi")
+    summary_df = pd.DataFrame({
+        "Variabel": ["Harga Emas", "USD/IDR", "IHSG"],
+        "Data Mentah": ["❌ Non-stasioner"] * 3,
+        "Log Return": ["✅ Stasioner"] * 3,
+    })
+    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+    st.info("""
+    **Insight Metodologi:**
+    - Data mentah ketiga variabel **non-stasioner** — memiliki tren panjang yang dominan
+    - Setelah transformasi log return, semua variabel **stasioner** (p < 0.001)
+    - Stasioneritas penting untuk validitas analisis ACF/PACF — analisis dilakukan pada **log return**
+    - Critical Values: 1% = -3.4327, 5% = -2.8626, 10% = -2.5673
+    """)
+
+with tab4:
     st.markdown("### Autocorrelation Function (ACF) & Partial (PACF)")
     st.caption("Analisis ketergantungan harga emas pada lag waktu — informasi struktur temporal untuk justifikasi window size.")
 
     from statsmodels.tsa.stattools import acf, pacf
 
-    max_lag = st.slider("Jumlah Lag", min_value=20, max_value=100, value=60, step=10)
+    series_choice = st.radio(
+        "Analisis pada:",
+        ["Log Return (stasioner)", "Data Mentah"],
+        horizontal=True, index=0,
+        help="Log return direkomendasikan karena stasioner."
+    )
 
-    gold_series = df["Gold_IDR_gram"].dropna()
+    if series_choice == "Log Return (stasioner)":
+        target_series = np.log(df["Gold_IDR_gram"] / df["Gold_IDR_gram"].shift(1)).dropna()
+    else:
+        target_series = df["Gold_IDR_gram"].dropna()
 
-    acf_vals = acf(gold_series, nlags=max_lag)
-    pacf_vals = pacf(gold_series, nlags=max_lag)
+    max_lag = st.slider("Jumlah Lag", min_value=10, max_value=60, value=40, step=5)
 
-    n = len(gold_series)
+    acf_vals = acf(target_series, nlags=max_lag)
+    pacf_vals = pacf(target_series, nlags=max_lag)
+
+    n = len(target_series)
     ci = 1.96 / np.sqrt(n)
 
     fig_acf = make_subplots(
         rows=2, cols=1,
-        subplot_titles=("ACF — Autocorrelation Function", "PACF — Partial Autocorrelation Function"),
+        subplot_titles=(f"ACF — {series_choice}", f"PACF — {series_choice}"),
         vertical_spacing=0.15,
     )
 
     for i, val in enumerate(acf_vals):
         fig_acf.add_trace(go.Scatter(
             x=[i, i], y=[0, val],
-            mode="lines", line=dict(color="#4a90e2", width=2),
-            showlegend=False,
+            mode="lines", line=dict(color="#4a90e2", width=2), showlegend=False,
         ), row=1, col=1)
     fig_acf.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
     fig_acf.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
@@ -242,8 +267,7 @@ with tab3:
     for i, val in enumerate(pacf_vals):
         fig_acf.add_trace(go.Scatter(
             x=[i, i], y=[0, val],
-            mode="lines", line=dict(color="#2ecc71", width=2),
-            showlegend=False,
+            mode="lines", line=dict(color="#2ecc71", width=2), showlegend=False,
         ), row=2, col=1)
     fig_acf.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
     fig_acf.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
@@ -258,33 +282,35 @@ with tab3:
     )
     fig_acf.update_xaxes(gridcolor="#2a3038", title="Lag (hari)")
     fig_acf.update_yaxes(gridcolor="#2a3038")
-
     st.plotly_chart(fig_acf, use_container_width=True)
 
-    st.markdown(f"""
-    **Insight:**
-    - **ACF** menunjukkan korelasi tinggi dan turun lambat → data **non-stasioner** (trend kuat)
-    - **PACF** memiliki spike tajam di lag-1 → menunjukkan karakteristik **AR(1)** yang kuat
-    - Nilai ACF pada lag 1: **{acf_vals[1]:.4f}**, lag 7: **{acf_vals[7]:.4f}**, lag 30: **{acf_vals[30]:.4f}**, lag 60: **{acf_vals[60]:.4f}**
-    - Window size 60 hari yang dipakai model mencakup informasi temporal yang masih signifikan
-    """)
+    if series_choice == "Log Return (stasioner)":
+        st.success(f"""
+        **Insight — Justifikasi Window Size:**
+        - PACF pada log return menunjukkan **spike signifikan hanya di lag-1**, lag berikutnya berada dalam confidence interval
+        - Ini mengindikasikan **karakteristik AR(1)** kuat pada return harga emas
+        - Berdasarkan rekomendasi Workneh & Jha (2025), kandidat window diambil dari lag PACF yang signifikan
+        - Validasi empiris (mini grid search) memilih **window=1** sebagai optimal
+        - Konsisten dengan teori: setelah memperhitungkan lag-1, kontribusi lag lain tidak signifikan
+        """)
+    else:
+        st.info(f"""
+        ACF data mentah turun lambat → indikasi **non-stasioneritas** (sudah dikonfirmasi via ADF test).
+        Untuk identifikasi struktur temporal yang valid, gunakan analisis pada log return.
+        """)
 
-with tab4:
+with tab5:
     st.markdown("### Statistik Deskriptif")
-
     desc = df.describe().round(2)
     desc.index = ["Jumlah", "Mean", "Std Dev", "Min", "Q1 (25%)", "Median", "Q3 (75%)", "Max"]
     desc.columns = ["Harga Emas (IDR/gram)", "USD/IDR", "IHSG"]
-
     st.dataframe(desc, use_container_width=True)
 
     st.markdown("---")
     st.markdown("### Distribusi Harga Emas")
-
     fig_hist = go.Figure()
     fig_hist.add_trace(go.Histogram(
-        x=df["Gold_IDR_gram"],
-        nbinsx=50,
+        x=df["Gold_IDR_gram"], nbinsx=50,
         marker=dict(color="#f5c441", line=dict(color="#1a2028", width=1)),
     ))
     fig_hist.update_layout(

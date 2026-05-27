@@ -1,5 +1,6 @@
 """
 Halaman Prediksi — Forecasting interaktif dengan custom horizon dan model.
+v3: window size auto-detect, best model dinamis.
 """
 import sys
 from pathlib import Path
@@ -10,6 +11,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from utils import (
     load_models_and_scalers,
+    load_evaluation_metrics,
+    get_best_model_name,
     get_market_data,
     predict_n_days_iterative,
     format_idr,
@@ -35,13 +38,25 @@ st.markdown("# 🔮 Prediksi Harga Emas")
 st.markdown("*Forecasting interaktif dengan pilihan model dan horizon kustom*")
 st.markdown("---")
 
+metrics_df = load_evaluation_metrics()
+best_model_name = get_best_model_name()
+
 col_model, col_horizon, col_start = st.columns(3)
 with col_model:
+    if metrics_df is not None:
+        sorted_models = metrics_df.sort_values("MAPE (%)")
+        model_labels = []
+        for _, row in sorted_models.iterrows():
+            label = f"{row['Model']} ⭐ (best, MAPE {row['MAPE (%)']:.2f}%)" \
+                    if row['Model'] == best_model_name \
+                    else f"{row['Model']} (MAPE {row['MAPE (%)']:.2f}%)"
+            model_labels.append(label)
+    else:
+        model_labels = [f"{best_model_name} ⭐ (best)", "GRU", "Bi-LSTM"]
+
     model_pilihan = st.selectbox(
-        "Pilih Model",
-        ["GRU ⭐ (best, MAPE 2.41%)", "LSTM (MAPE 6.98%)", "Bi-LSTM (MAPE 4.59%)"],
-        index=0,
-        help="GRU direkomendasikan karena akurasi terbaik pada test set",
+        "Pilih Model", model_labels, index=0,
+        help=f"{best_model_name} direkomendasikan karena akurasi terbaik pada test set",
     )
 
 with col_horizon:
@@ -62,24 +77,26 @@ with col_start:
 
 with st.spinner("Loading data dan model..."):
     df, source_label = get_market_data()
-    models, scaler, scaler_target = load_models_and_scalers()
+    models, scaler, scaler_target, window_size = load_models_and_scalers()
 
 if df is None:
     st.error("Data tidak tersedia.")
     st.stop()
 
-active_key = {
-    "GRU ⭐ (best, MAPE 2.41%)": "GRU",
-    "LSTM (MAPE 6.98%)": "LSTM",
-    "Bi-LSTM (MAPE 4.59%)": "Bi-LSTM",
-}[model_pilihan]
+active_key = model_pilihan.split(" ")[0]  # "LSTM ⭐..." → "LSTM"
+if "Bi-LSTM" in model_pilihan:
+    active_key = "Bi-LSTM"
+
 active_model = models[active_key] if models is not None else None
+
+if window_size is None:
+    window_size = 1
 
 if active_model is None:
     st.warning("Model belum ter-load. Hasil prediksi pakai mode demo.")
 
 with st.spinner(f"Menjalankan {active_key} untuk {n_days} hari ke depan..."):
-    forecast = predict_n_days_iterative(active_model, scaler, scaler_target, df, n_days)
+    forecast = predict_n_days_iterative(active_model, scaler, scaler_target, df, window_size, n_days)
 
 future_dates = pd.bdate_range(df.index[-1] + pd.Timedelta(days=1), periods=n_days)
 harga_terakhir = df["Gold_IDR_gram"].iloc[-1]
@@ -149,24 +166,22 @@ st.markdown("### 📋 Tabel Prediksi")
 pred_df = pd.DataFrame({
     "Tanggal": future_dates.strftime("%A, %d %b %Y"),
     "Prediksi (IDR/gram)": [f"Rp {v:,.0f}" for v in forecast],
-    "Prediksi (IDR/gram) raw": forecast.round(0).astype(int),
     "Change dari hari sebelumnya": [
         f"{((forecast[i] - (forecast[i-1] if i > 0 else harga_terakhir)) / (forecast[i-1] if i > 0 else harga_terakhir) * 100):+.2f}%"
         for i in range(n_days)
     ],
 })
+pred_df.index = range(1, len(pred_df) + 1)
+pred_df.index.name = "Hari ke-"
 
-display_df = pred_df[["Tanggal", "Prediksi (IDR/gram)", "Change dari hari sebelumnya"]].copy()
-display_df.index = range(1, len(display_df) + 1)
-display_df.index.name = "Hari ke-"
-
-st.dataframe(display_df, use_container_width=True, height=min(400, 35 * (n_days + 1)))
+st.dataframe(pred_df, use_container_width=True, height=min(400, 35 * (n_days + 1)))
 
 csv_df = pd.DataFrame({
     "Hari_ke": range(1, n_days + 1),
     "Tanggal": future_dates.strftime("%Y-%m-%d"),
     "Prediksi_IDR_per_gram": forecast.round(2),
     "Model": active_key,
+    "Window_Size": window_size,
     "Data_Source": source_label,
 })
 csv = csv_df.to_csv(index=False).encode("utf-8")
@@ -180,8 +195,7 @@ st.download_button(
 
 st.markdown("---")
 st.caption(
-    f"💡 Dashboard menggunakan iterative forecasting — "
-    f"output hari ke-N dipakai sebagai input untuk prediksi hari ke-N+1. "
-    f"Semakin jauh horizon, semakin buram akurasi. "
+    f"💡 Window size: **{window_size} hari** (hasil hybrid PACF + empirical grid search). "
+    f"Iterative forecasting: output hari ke-N dipakai sebagai input untuk prediksi hari ke-N+1. "
     f"Data source: {source_label}."
 )

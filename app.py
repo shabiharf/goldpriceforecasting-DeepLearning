@@ -1,7 +1,12 @@
 """
-Gold Price Forecasting Dashboard — Halaman Utama
+Gold Price Forecasting Dashboard — Halaman Utama (v3)
 Thesis: Shabiha Rahma Fauziah (1206220017)
 Program Studi Sains Data, Telkom University
+
+Update v3:
+- Best model auto-detect dari evaluation_metrics.csv (LSTM dengan MAPE 0.94%)
+- Window size auto-detect dari model input shape
+- Metodologi hybrid: PACF + empirical grid search
 """
 import streamlit as st
 import pandas as pd
@@ -11,6 +16,7 @@ from utils import (
     load_models_and_scalers,
     load_test_predictions,
     load_evaluation_metrics,
+    get_best_model_name,
     get_market_data,
     predict_next_day,
     predict_n_days_iterative,
@@ -67,11 +73,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+best_model_name = get_best_model_name()
+
 with st.sidebar:
     st.markdown("## 📈 Gold Forecast")
     st.markdown("---")
     st.markdown("### Filter")
-    model_pilihan = st.selectbox("Model", ["GRU ⭐ (best)", "LSTM", "Bi-LSTM"], index=0)
+
+    model_options = []
+    metrics_for_dropdown = load_evaluation_metrics()
+    if metrics_for_dropdown is not None:
+        sorted_models = metrics_for_dropdown.sort_values("MAPE (%)")["Model"].tolist()
+        for m in sorted_models:
+            label = f"{m} ⭐ (best)" if m == best_model_name else m
+            model_options.append(label)
+    else:
+        model_options = [f"{best_model_name} ⭐ (best)", "GRU", "Bi-LSTM"]
+
+    model_pilihan = st.selectbox("Model", model_options, index=0)
     horizon = st.selectbox("Horizon prediksi", ["1 hari", "7 hari", "30 hari"], index=1)
 
 with st.spinner("Memuat data pasar..."):
@@ -94,38 +113,42 @@ with col_status:
         st.markdown('<span class="offline-badge">● Offline</span>', unsafe_allow_html=True)
 
 with st.expander("⚠️ Catatan Penting tentang Akurasi Prediksi Live", expanded=False):
-    st.markdown("""
-    Model pada dashboard ini dilatih menggunakan data historis **Januari 2015 – Desember 2025**.
-    Metrik evaluasi yang dilaporkan (MAPE GRU: **2.41%**) diukur pada test set dalam rentang tersebut.
+    st.markdown(f"""
+    Model pada dashboard ini dilatih menggunakan data historis **Januari 2015 – Desember 2025**
+    dengan metodologi **hybrid window selection** (PACF + validasi empiris).
+    Hasil mini grid search menentukan **window size optimal = 1 hari**, sehingga model
+    melakukan prediksi t+1 berdasarkan harga t.
+
+    Metrik evaluasi terbaik (test set 2023–2025):
+    - **{best_model_name}** dengan MAPE **0.94%** — terbaik di antara 3 arsitektur
 
     Untuk prediksi setelah Desember 2025:
     - Prediksi bersifat **ekstrapolasi** dari distribusi data training
-    - Akurasi aktual dapat berbeda dari MAPE yang dilaporkan, tergantung seberapa jauh kondisi pasar
-      menyimpang dari distribusi training (*out-of-distribution*)
-    - Prediksi multi-hari (>1 hari) menggunakan *iterative forecasting* — error akan terakumulasi
-      semakin jauh horizon
+    - Akurasi aktual dapat berbeda dari MAPE yang dilaporkan, tergantung seberapa jauh
+      kondisi pasar menyimpang dari distribusi training (*out-of-distribution*)
+    - Prediksi multi-hari (>1 hari) menggunakan *iterative forecasting* — error
+      akan terakumulasi semakin jauh horizon
 
     Dashboard ini disajikan sebagai **proof-of-concept** dari hasil penelitian.
-    Untuk implementasi produksi jangka panjang, **retraining berkala** dengan data terbaru
-    direkomendasikan sebagai *future work*.
     """)
 
-models, scaler, scaler_target = load_models_and_scalers()
+models, scaler, scaler_target, window_size = load_models_and_scalers()
 metrics_df = load_evaluation_metrics()
 test_preds = load_test_predictions()
 
 if models is None:
     st.info("💡 **Mode Demo**: File model belum ter-load. "
             "Pastikan folder `models/` berisi 3 file `.h5` + 2 file `.pkl`.")
+    window_size = 1
 
-active_model_key = {"GRU ⭐ (best)": "GRU", "LSTM": "LSTM", "Bi-LSTM": "Bi-LSTM"}[model_pilihan]
+active_model_key = model_pilihan.replace(" ⭐ (best)", "").strip()
 active_model = models[active_model_key] if models is not None else None
 
 harga_terakhir = df["Gold_IDR_gram"].iloc[-1]
 harga_kemarin = df["Gold_IDR_gram"].iloc[-2]
 change_today = (harga_terakhir - harga_kemarin) / harga_kemarin * 100
 
-pred_besok = predict_next_day(active_model, scaler, scaler_target, df)
+pred_besok = predict_next_day(active_model, scaler, scaler_target, df, window_size)
 change_pred = (pred_besok - harga_terakhir) / harga_terakhir * 100
 
 usd_idr = df["USDIDR"].iloc[-1]
@@ -134,9 +157,9 @@ usd_change = (usd_idr - usd_idr_prev) / usd_idr_prev * 100
 
 if metrics_df is not None:
     active_mape = metrics_df[metrics_df["Model"] == active_model_key]["MAPE (%)"].values
-    mape_value = active_mape[0] if len(active_mape) > 0 else 2.41
+    mape_value = active_mape[0] if len(active_mape) > 0 else 0.94
 else:
-    mape_value = 2.41
+    mape_value = 0.94
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -147,7 +170,8 @@ with col2:
               delta=f"{change_pred:+.2f}% estimasi")
 with col3:
     st.metric(f"MAPE Model {active_model_key}", f"{mape_value:.2f}%",
-              delta="Best model" if active_model_key == "GRU" else "", delta_color="off")
+              delta="Best model" if active_model_key == best_model_name else "",
+              delta_color="off")
 with col4:
     st.metric("USD/IDR", f"{usd_idr:,.0f}", delta=f"{usd_change:+.2f}%", delta_color="inverse")
 
@@ -158,10 +182,10 @@ fig = go.Figure()
 if test_preds is not None:
     fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["Actual"],
                               name="Aktual", line=dict(color="#f5c441", width=2)))
-    fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["GRU"],
-                              name="GRU", line=dict(color="#1d9e75", width=1.5, dash="dash")))
     fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["LSTM"],
-                              name="LSTM", line=dict(color="#378add", width=1, dash="dot")))
+                              name="LSTM", line=dict(color="#378add", width=1.5, dash="dash")))
+    fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["GRU"],
+                              name="GRU", line=dict(color="#1d9e75", width=1, dash="dot")))
     fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["BiLSTM"],
                               name="Bi-LSTM", line=dict(color="#e24b4a", width=1, dash="dot")))
 else:
@@ -189,12 +213,12 @@ with col_left:
         metrics_sorted = metrics_df.sort_values("MAPE (%)")
         models_list = metrics_sorted["Model"].tolist()
         mape_list = metrics_sorted["MAPE (%)"].tolist()
-        colors_map = {"GRU": "#1d9e75", "Bi-LSTM": "#e24b4a", "LSTM": "#378add"}
+        colors_map = {"LSTM": "#378add", "GRU": "#1d9e75", "Bi-LSTM": "#e24b4a"}
         colors_list = [colors_map.get(m, "#888780") for m in models_list]
     else:
-        models_list = ["GRU", "Bi-LSTM", "LSTM"]
-        mape_list = [2.41, 4.59, 6.98]
-        colors_list = ["#1d9e75", "#e24b4a", "#378add"]
+        models_list = ["LSTM", "Bi-LSTM", "GRU"]
+        mape_list = [0.94, 1.67, 2.53]
+        colors_list = ["#378add", "#e24b4a", "#1d9e75"]
 
     fig_bar = go.Figure()
     fig_bar.add_trace(go.Bar(
@@ -218,7 +242,7 @@ with col_right:
     n_horizon = {"1 hari": 1, "7 hari": 7, "30 hari": 30}.get(horizon, 7)
     st.markdown(f"### 🔮 Prediksi {n_horizon} Hari ke Depan ({active_model_key})")
 
-    forecast = predict_n_days_iterative(active_model, scaler, scaler_target, df, n_horizon)
+    forecast = predict_n_days_iterative(active_model, scaler, scaler_target, df, window_size, n_horizon)
     future_dates = pd.bdate_range(df.index[-1] + pd.Timedelta(days=1), periods=n_horizon)
 
     fig_forecast = go.Figure()
@@ -245,7 +269,7 @@ with col_right:
         legend=dict(orientation="h", yanchor="top", y=1.12, xanchor="left", x=0),
     )
     st.plotly_chart(fig_forecast, use_container_width=True)
-    st.caption("💡 Semakin jauh horizon, semakin buram akurasi (iterative forecasting).")
+    st.caption(f"💡 Semakin jauh horizon, semakin buram akurasi (iterative forecasting). Window size: {window_size} hari.")
 
 st.markdown("---")
 st.markdown(
