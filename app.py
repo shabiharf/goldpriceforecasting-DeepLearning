@@ -1,12 +1,12 @@
 """
-Gold Price Forecasting Dashboard — Halaman Utama (v3)
-Thesis: Shabiha Rahma Fauziah (1206220017)
-Program Studi Sains Data, Telkom University
+Gold Price Forecasting Dashboard — Halaman Utama (v3.1)
+Tugas Akhir: Shabiha Rahma Fauziah (1206220017)
+Program Studi Sains Data, Telkom University Surabaya
 
-Update v3:
-- Best model auto-detect dari evaluation_metrics.csv (LSTM dengan MAPE 0.94%)
-- Window size auto-detect dari model input shape
-- Metodologi hybrid: PACF + empirical grid search
+Update v3.1:
+- Best model auto-detect dari evaluation_metrics.csv (sekarang: Bi-LSTM, MAPE 1.54%)
+- Window size auto-detect dari model input shape (window=1)
+- Badge "Updated Daily" untuk data via GitHub Actions (bukan lagi "Offline")
 """
 import streamlit as st
 import pandas as pd
@@ -53,7 +53,7 @@ st.markdown("""
     }
     .offline-badge {
         display: inline-block;
-        background: #7a6418;
+        background: #2c7a9e;
         color: white;
         font-size: 12px;
         padding: 4px 10px;
@@ -88,7 +88,7 @@ with st.sidebar:
             label = f"{m} ⭐ (best)" if m == best_model_name else m
             model_options.append(label)
     else:
-        model_options = [f"{best_model_name} ⭐ (best)", "GRU", "Bi-LSTM"]
+        model_options = [f"{best_model_name} ⭐ (best)", "GRU", "LSTM"]
 
     model_pilihan = st.selectbox("Model", model_options, index=0)
     horizon = st.selectbox("Horizon prediksi", ["1 hari", "7 hari", "30 hari"], index=1)
@@ -110,7 +110,7 @@ with col_status:
     if "live" in source_label.lower():
         st.markdown('<span class="live-badge">● Live</span>', unsafe_allow_html=True)
     else:
-        st.markdown('<span class="offline-badge">● Offline</span>', unsafe_allow_html=True)
+        st.markdown('<span class="offline-badge">● Updated Daily</span>', unsafe_allow_html=True)
 
 with st.expander("⚠️ Catatan Penting tentang Akurasi Prediksi Live", expanded=False):
     st.markdown(f"""
@@ -120,7 +120,11 @@ with st.expander("⚠️ Catatan Penting tentang Akurasi Prediksi Live", expande
     melakukan prediksi t+1 berdasarkan harga t.
 
     Metrik evaluasi terbaik (test set 2023–2025):
-    - **{best_model_name}** dengan MAPE **0.94%** — terbaik di antara 3 arsitektur
+    - **{best_model_name}** — model dengan MAPE terendah di antara 3 arsitektur
+
+    Data historis di-refresh otomatis setiap hari via GitHub Actions. Jika Yahoo Finance
+    tidak dapat diakses langsung dari server dashboard, sistem menggunakan data
+    hasil refresh terakhir sebagai fallback.
 
     Untuk prediksi setelah Desember 2025:
     - Prediksi bersifat **ekstrapolasi** dari distribusi data training
@@ -157,9 +161,9 @@ usd_change = (usd_idr - usd_idr_prev) / usd_idr_prev * 100
 
 if metrics_df is not None:
     active_mape = metrics_df[metrics_df["Model"] == active_model_key]["MAPE (%)"].values
-    mape_value = active_mape[0] if len(active_mape) > 0 else 0.94
+    mape_value = active_mape[0] if len(active_mape) > 0 else 1.54
 else:
-    mape_value = 0.94
+    mape_value = 1.54
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -183,11 +187,11 @@ if test_preds is not None:
     fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["Actual"],
                               name="Aktual", line=dict(color="#f5c441", width=2)))
     fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["LSTM"],
-                              name="LSTM", line=dict(color="#378add", width=1.5, dash="dash")))
+                              name="LSTM", line=dict(color="#378add", width=1, dash="dot")))
     fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["GRU"],
                               name="GRU", line=dict(color="#1d9e75", width=1, dash="dot")))
     fig.add_trace(go.Scatter(x=test_preds["Date"], y=test_preds["BiLSTM"],
-                              name="Bi-LSTM", line=dict(color="#e24b4a", width=1, dash="dot")))
+                              name="Bi-LSTM", line=dict(color="#e24b4a", width=1.5, dash="dash")))
 else:
     st.warning("File `test_predictions.csv` tidak ditemukan di folder `data/`.")
 
@@ -216,9 +220,9 @@ with col_left:
         colors_map = {"LSTM": "#378add", "GRU": "#1d9e75", "Bi-LSTM": "#e24b4a"}
         colors_list = [colors_map.get(m, "#888780") for m in models_list]
     else:
-        models_list = ["LSTM", "Bi-LSTM", "GRU"]
-        mape_list = [0.94, 1.67, 2.53]
-        colors_list = ["#378add", "#e24b4a", "#1d9e75"]
+        models_list = ["Bi-LSTM", "LSTM", "GRU"]
+        mape_list = [1.54, 2.36, 2.45]
+        colors_list = ["#e24b4a", "#378add", "#1d9e75"]
 
     fig_bar = go.Figure()
     fig_bar.add_trace(go.Bar(
@@ -274,8 +278,8 @@ with col_right:
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #888780; font-size: 13px;'>"
-    "Thesis Dashboard · Shabiha Rahma Fauziah (1206220017) · "
-    "Sains Data — Telkom University"
+    "Tugas Akhir Dashboard · Shabiha Rahma Fauziah (1206220017) · "
+    "Sains Data — Telkom University Surabaya"
     "</div>",
     unsafe_allow_html=True,
 )

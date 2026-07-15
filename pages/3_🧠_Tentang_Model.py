@@ -109,9 +109,11 @@ with arch_tab1:
         memanfaatkan informasi multivariat (gold USD, USD/IDR, IHSG) hari kemarin
         untuk prediksi hari ini.
 
-        **Hyperparameter:**
+        **Hyperparameter (hasil grid search):**
         - Units: 128
-        - Dropout: 0.2
+        - Batch size: 32
+        - Learning rate: 0.005
+        - Dropout: 0.3
         - Optimizer: Adam
         - Loss: MSE
         """)
@@ -120,7 +122,7 @@ with arch_tab1:
 Sequential([
     Input(shape=({window_size}, 3)),
     LSTM(128, return_sequences=False),
-    Dropout(0.2),
+    Dropout(0.3),
     Dense(64, activation='relu'),
     Dense(1)
 ])
@@ -136,16 +138,18 @@ with arch_tab2:
         kekuatan bidirectional kurang ter-eksploitasi tetapi tetap memberikan
         representasi feature yang lebih kaya.
 
-        **Hyperparameter:**
+        **Hyperparameter (hasil grid search):**
         - Units: 128 (per arah)
-        - Dropout: 0.2
+        - Batch size: 32
+        - Learning rate: 0.001
+        - Dropout: 0.3
         """)
     with col_b:
         st.code(f"""
 Sequential([
     Input(shape=({window_size}, 3)),
     Bidirectional(LSTM(128)),
-    Dropout(0.2),
+    Dropout(0.3),
     Dense(64, activation='relu'),
     Dense(1)
 ])
@@ -162,8 +166,10 @@ with arch_tab3:
         di window pendek — kemungkinan karena gate structure-nya kurang ekspresif
         untuk task ini.
 
-        **Hyperparameter:**
+        **Hyperparameter (hasil grid search):**
         - Units: 128
+        - Batch size: 64
+        - Learning rate: 0.001
         - Dropout: 0.2
         """)
     with col_b:
@@ -185,11 +191,11 @@ st.markdown("""
 Window size tidak ditetapkan secara arbitrer atau fixed. Penelitian ini mengadopsi
 **hybrid approach** berdasarkan rekomendasi Workneh & Jha (2025) dan Leites et al. (2024):
 
-1. **Uji Stasioneritas (ADF Test)** pada data mentah dan log return
-2. **Identifikasi kandidat window** dari spike PACF signifikan pada data stasioner (log return)
+1. **Uji Stasioneritas (ADF Test)** pada data mentah dan differencing
+2. **Identifikasi kandidat window** dari spike PACF signifikan pada data stasioner (differencing)
 3. **Validasi empiris** via mini grid search menggunakan proxy GRU sederhana
 
-Hasil: PACF log return menunjukkan **spike signifikan hanya di lag-1**, dikonfirmasi
+Hasil: PACF differencing menunjukkan **spike signifikan hanya di lag-1**, dikonfirmasi
 oleh mini grid search yang memilih **window = 1** sebagai optimal.
 """)
 
@@ -201,7 +207,7 @@ with col_m1:
     - **Total observasi:** 2,790 hari trading
     - **Missing value:** Forward-fill (max 1 hari), lalu drop
     - **Normalisasi:** Min-Max scaling [0, 1]
-    - **Stasionerisasi:** Log return untuk analisis ACF/PACF
+    - **Stasionerisasi:** Differencing untuk analisis ACF/PACF
 
     ### Sliding Window
     - **Window size:** {window_size} hari (hybrid PACF + empirical)
@@ -219,7 +225,7 @@ with col_m2:
         - `units`: [64, 128]
         - `batch_size`: [32, 64]
         - `learning_rate`: [0.001, 0.005]
-        - `dropout`: [0.2]
+        - `dropout`: [0.2, 0.3, 0.5]
     - **Early stopping:** patience 20 epoch
     - **Max epoch:** 200 (final training)
 
@@ -234,7 +240,7 @@ st.markdown("## ⚠️ Keterbatasan & Future Work")
 
 with st.expander("Lihat keterbatasan penelitian", expanded=True):
     st.markdown(f"""
-    1. **Window pendek (= {window_size} hari)** — Konsekuensi langsung dari PACF analysis pada log return.
+    1. **Window pendek (= {window_size} hari)** — Konsekuensi langsung dari PACF analysis pada differencing.
        Meskipun secara teknis valid dan didukung mini grid search, kekuatan unique RNN
        (long-term memory) tidak teroptimalkan penuh. Model bertindak mirip dengan AR(1) non-linear.
 

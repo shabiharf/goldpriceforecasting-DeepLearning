@@ -1,5 +1,5 @@
 """
-Halaman Data Explorer v3 — EDA dengan tambahan ADF Test dan Log Return.
+Halaman Data Explorer v3 — EDA dengan tambahan ADF Test dan Differencing.
 """
 import sys
 from pathlib import Path
@@ -188,12 +188,12 @@ with tab3:
             """, unsafe_allow_html=True)
 
     st.markdown("")
-    st.markdown("#### 2. Setelah Log Return Transformation")
-    st.markdown("Log return: $r_t = \\ln(P_t / P_{t-1})$ — transformasi standar untuk stasionerisasi data finansial.")
+    st.markdown("#### 2. Setelah Differencing Transformation")
+    st.markdown("Differencing: $\\Delta y_t = y_t - y_{t-1}$ — transformasi standar untuk stasionerisasi data time series.")
 
-    log_ret = ADF_RESULTS["log_return"]
+    diff_res = ADF_RESULTS["differencing"]
     cols_log = st.columns(3)
-    for col, (var_name, result) in zip(cols_log, log_ret.items()):
+    for col, (var_name, result) in zip(cols_log, diff_res.items()):
         with col:
             badge = '<span class="stat-badge-yes">✅ STASIONER</span>' if result["stationary"] \
                     else '<span class="stat-badge-no">❌ NON-STASIONER</span>'
@@ -211,15 +211,15 @@ with tab3:
     summary_df = pd.DataFrame({
         "Variabel": ["Harga Emas", "USD/IDR", "IHSG"],
         "Data Mentah": ["❌ Non-stasioner"] * 3,
-        "Log Return": ["✅ Stasioner"] * 3,
+        "Differencing": ["✅ Stasioner"] * 3,
     })
     st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
     st.info("""
     **Insight Metodologi:**
     - Data mentah ketiga variabel **non-stasioner** — memiliki tren panjang yang dominan
-    - Setelah transformasi log return, semua variabel **stasioner** (p < 0.001)
-    - Stasioneritas penting untuk validitas analisis ACF/PACF — analisis dilakukan pada **log return**
+    - Setelah transformasi differencing, semua variabel **stasioner** (p < 0.001)
+    - Stasioneritas penting untuk validitas analisis ACF/PACF — analisis dilakukan pada **differencing**
     - Critical Values: 1% = -3.4327, 5% = -2.8626, 10% = -2.5673
     """)
 
@@ -231,13 +231,13 @@ with tab4:
 
     series_choice = st.radio(
         "Analisis pada:",
-        ["Log Return (stasioner)", "Data Mentah"],
+        ["Differencing (stasioner)", "Data Mentah"],
         horizontal=True, index=0,
-        help="Log return direkomendasikan karena stasioner."
+        help="Differencing direkomendasikan karena stasioner."
     )
 
-    if series_choice == "Log Return (stasioner)":
-        target_series = np.log(df["Gold_IDR_gram"] / df["Gold_IDR_gram"].shift(1)).dropna()
+    if series_choice == "Differencing (stasioner)":
+        target_series = df["Gold_IDR_gram"].diff().dropna()
     else:
         target_series = df["Gold_IDR_gram"].dropna()
 
@@ -284,11 +284,11 @@ with tab4:
     fig_acf.update_yaxes(gridcolor="#2a3038")
     st.plotly_chart(fig_acf, use_container_width=True)
 
-    if series_choice == "Log Return (stasioner)":
+    if series_choice == "Differencing (stasioner)":
         st.success(f"""
         **Insight — Justifikasi Window Size:**
-        - PACF pada log return menunjukkan **spike signifikan hanya di lag-1**, lag berikutnya berada dalam confidence interval
-        - Ini mengindikasikan **karakteristik AR(1)** kuat pada return harga emas
+        - PACF pada differencing menunjukkan **spike signifikan hanya di lag-1**, lag berikutnya berada dalam confidence interval
+        - Ini mengindikasikan **karakteristik AR(1)** kuat pada perubahan harga emas harian
         - Berdasarkan rekomendasi Workneh & Jha (2025), kandidat window diambil dari lag PACF yang signifikan
         - Validasi empiris (mini grid search) memilih **window=1** sebagai optimal
         - Konsisten dengan teori: setelah memperhitungkan lag-1, kontribusi lag lain tidak signifikan
@@ -296,7 +296,7 @@ with tab4:
     else:
         st.info(f"""
         ACF data mentah turun lambat → indikasi **non-stasioneritas** (sudah dikonfirmasi via ADF test).
-        Untuk identifikasi struktur temporal yang valid, gunakan analisis pada log return.
+        Untuk identifikasi struktur temporal yang valid, gunakan analisis pada differencing.
         """)
 
 with tab5:

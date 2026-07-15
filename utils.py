@@ -1,6 +1,7 @@
 """
 Utility functions untuk Gold Price Forecasting Dashboard v3
 Updated: window size auto-detect dari model shape, support ADF results
+(ADF_RESULTS sekarang pakai transformasi differencing, bukan log return)
 """
 import numpy as np
 import pandas as pd
@@ -185,17 +186,17 @@ def format_idr(value):
     return f"Rp {value:,.0f}"
 
 
-# ============= ADF Test Results (dari notebook v3) =============
+# ============= ADF Test Results (dari notebook v3 — REVISI differencing) =============
 ADF_RESULTS = {
     "raw": {
         "Harga Emas": {"adf_stat": 5.228427, "p_value": 1.000000, "stationary": False},
         "USD/IDR":    {"adf_stat": -1.853472, "p_value": 0.354256, "stationary": False},
         "IHSG":       {"adf_stat": -0.482179, "p_value": 0.895447, "stationary": False},
     },
-    "log_return": {
-        "Harga Emas": {"adf_stat": -22.837159, "p_value": 0.000000, "stationary": True},
-        "USD/IDR":    {"adf_stat": -10.904223, "p_value": 0.000000, "stationary": True},
-        "IHSG":       {"adf_stat": -15.656576, "p_value": 0.000000, "stationary": True},
+    "differencing": {
+        "Harga Emas": {"adf_stat": -14.024314, "p_value": 0.000000, "stationary": True},
+        "USD/IDR":    {"adf_stat": -10.848595, "p_value": 0.000000, "stationary": True},
+        "IHSG":       {"adf_stat": -15.202212, "p_value": 0.000000, "stationary": True},
     },
     "critical_values": {"1%": -3.4327, "5%": -2.8626, "10%": -2.5673},
 }
