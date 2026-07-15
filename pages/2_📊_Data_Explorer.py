@@ -225,79 +225,74 @@ with tab3:
 
 with tab4:
     st.markdown("### Autocorrelation Function (ACF) & Partial (PACF)")
-    st.caption("Analisis ketergantungan harga emas pada lag waktu — informasi struktur temporal untuk justifikasi window size.")
+    st.caption("Analisis ketergantungan harga emas pada lag waktu, sebelum dan sesudah differencing — informasi struktur temporal untuk justifikasi window size.")
 
     from statsmodels.tsa.stattools import acf, pacf
 
-    series_choice = st.radio(
-        "Analisis pada:",
-        ["Differencing (stasioner)", "Data Mentah"],
-        horizontal=True, index=0,
-        help="Differencing direkomendasikan karena stasioner."
-    )
-
-    if series_choice == "Differencing (stasioner)":
-        target_series = df["Gold_IDR_gram"].diff().dropna()
-    else:
-        target_series = df["Gold_IDR_gram"].dropna()
-
     max_lag = st.slider("Jumlah Lag", min_value=10, max_value=60, value=40, step=5)
 
-    acf_vals = acf(target_series, nlags=max_lag)
-    pacf_vals = pacf(target_series, nlags=max_lag)
+    def plot_acf_pacf(series, label, acf_color, pacf_color):
+        acf_vals = acf(series, nlags=max_lag)
+        pacf_vals = pacf(series, nlags=max_lag)
+        n = len(series)
+        ci = 1.96 / np.sqrt(n)
 
-    n = len(target_series)
-    ci = 1.96 / np.sqrt(n)
+        fig = make_subplots(
+            rows=2, cols=1,
+            subplot_titles=(f"ACF — {label}", f"PACF — {label}"),
+            vertical_spacing=0.18,
+        )
 
-    fig_acf = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=(f"ACF — {series_choice}", f"PACF — {series_choice}"),
-        vertical_spacing=0.15,
-    )
+        for i, val in enumerate(acf_vals):
+            fig.add_trace(go.Scatter(
+                x=[i, i], y=[0, val],
+                mode="lines", line=dict(color=acf_color, width=2), showlegend=False,
+            ), row=1, col=1)
+        fig.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
+        fig.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
+        fig.add_hline(y=0, line=dict(color="white", width=0.5), row=1, col=1)
 
-    for i, val in enumerate(acf_vals):
-        fig_acf.add_trace(go.Scatter(
-            x=[i, i], y=[0, val],
-            mode="lines", line=dict(color="#4a90e2", width=2), showlegend=False,
-        ), row=1, col=1)
-    fig_acf.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
-    fig_acf.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
-    fig_acf.add_hline(y=0, line=dict(color="white", width=0.5), row=1, col=1)
+        for i, val in enumerate(pacf_vals):
+            fig.add_trace(go.Scatter(
+                x=[i, i], y=[0, val],
+                mode="lines", line=dict(color=pacf_color, width=2), showlegend=False,
+            ), row=2, col=1)
+        fig.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
+        fig.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
+        fig.add_hline(y=0, line=dict(color="white", width=0.5), row=2, col=1)
 
-    for i, val in enumerate(pacf_vals):
-        fig_acf.add_trace(go.Scatter(
-            x=[i, i], y=[0, val],
-            mode="lines", line=dict(color="#2ecc71", width=2), showlegend=False,
-        ), row=2, col=1)
-    fig_acf.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
-    fig_acf.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
-    fig_acf.add_hline(y=0, line=dict(color="white", width=0.5), row=2, col=1)
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#1a2028",
+            plot_bgcolor="#1a2028",
+            height=460,
+            margin=dict(l=40, r=40, t=50, b=40),
+        )
+        fig.update_xaxes(gridcolor="#2a3038", title="Lag (hari)")
+        fig.update_yaxes(gridcolor="#2a3038")
+        return fig
 
-    fig_acf.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="#1a2028",
-        plot_bgcolor="#1a2028",
-        height=500,
-        margin=dict(l=40, r=40, t=50, b=40),
-    )
-    fig_acf.update_xaxes(gridcolor="#2a3038", title="Lag (hari)")
-    fig_acf.update_yaxes(gridcolor="#2a3038")
-    st.plotly_chart(fig_acf, use_container_width=True)
+    st.markdown("#### 1. Data Mentah (sebelum differencing)")
+    raw_series = df["Gold_IDR_gram"].dropna()
+    st.plotly_chart(plot_acf_pacf(raw_series, "Data Mentah", "#4a90e2", "#2ecc71"), use_container_width=True)
+    st.info("""
+    ACF turun lambat (*slow decay*) dan PACF *cut-off* tajam di lag-1 → pola khas **random walk**,
+    mengindikasikan **non-stasioneritas** (sudah dikonfirmasi via ADF test di tab sebelumnya).
+    Struktur temporal belum bisa dibaca dengan valid dari sini.
+    """)
 
-    if series_choice == "Differencing (stasioner)":
-        st.success(f"""
-        **Insight — Justifikasi Window Size:**
-        - PACF pada differencing menunjukkan **spike signifikan hanya di lag-1**, lag berikutnya berada dalam confidence interval
-        - Ini mengindikasikan **karakteristik AR(1)** kuat pada perubahan harga emas harian
-        - Berdasarkan rekomendasi Workneh & Jha (2025), kandidat window diambil dari lag PACF yang signifikan
-        - Validasi empiris (mini grid search) memilih **window=1** sebagai optimal
-        - Konsisten dengan teori: setelah memperhitungkan lag-1, kontribusi lag lain tidak signifikan
-        """)
-    else:
-        st.info(f"""
-        ACF data mentah turun lambat → indikasi **non-stasioneritas** (sudah dikonfirmasi via ADF test).
-        Untuk identifikasi struktur temporal yang valid, gunakan analisis pada differencing.
-        """)
+    st.markdown("")
+    st.markdown("#### 2. Setelah Differencing")
+    diff_series = df["Gold_IDR_gram"].diff().dropna()
+    st.plotly_chart(plot_acf_pacf(diff_series, "Differencing (stasioner)", "#f5c441", "#e24b4a"), use_container_width=True)
+    st.success("""
+    **Insight — Justifikasi Window Size:**
+    - PACF pada differencing menunjukkan **spike signifikan hanya di lag-1**, lag berikutnya berada dalam confidence interval
+    - Ini mengindikasikan **karakteristik AR(1)** kuat pada perubahan harga emas harian
+    - Berdasarkan rekomendasi Workneh & Jha (2025), kandidat window diambil dari lag PACF yang signifikan
+    - Validasi empiris (mini grid search) memilih **window=1** sebagai optimal
+    - Konsisten dengan teori: setelah memperhitungkan lag-1, kontribusi lag lain tidak signifikan
+    """)
 
 with tab5:
     st.markdown("### Statistik Deskriptif")
