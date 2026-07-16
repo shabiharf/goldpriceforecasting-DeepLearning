@@ -227,54 +227,14 @@ with tab4:
     st.markdown("### Autocorrelation Function (ACF) & Partial (PACF)")
     st.caption("Analisis ketergantungan harga emas pada lag waktu, sebelum dan sesudah differencing — informasi struktur temporal untuk justifikasi window size.")
 
-    from statsmodels.tsa.stattools import acf, pacf
-
-    max_lag = st.slider("Jumlah Lag", min_value=10, max_value=60, value=40, step=5)
-
-    def plot_acf_pacf(series, label, acf_color, pacf_color):
-        acf_vals = acf(series, nlags=max_lag)
-        pacf_vals = pacf(series, nlags=max_lag)
-        n = len(series)
-        ci = 1.96 / np.sqrt(n)
-
-        fig = make_subplots(
-            rows=2, cols=1,
-            subplot_titles=(f"ACF — {label}", f"PACF — {label}"),
-            vertical_spacing=0.18,
-        )
-
-        for i, val in enumerate(acf_vals):
-            fig.add_trace(go.Scatter(
-                x=[i, i], y=[0, val],
-                mode="lines", line=dict(color=acf_color, width=2), showlegend=False,
-            ), row=1, col=1)
-        fig.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
-        fig.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=1, col=1)
-        fig.add_hline(y=0, line=dict(color="white", width=0.5), row=1, col=1)
-
-        for i, val in enumerate(pacf_vals):
-            fig.add_trace(go.Scatter(
-                x=[i, i], y=[0, val],
-                mode="lines", line=dict(color=pacf_color, width=2), showlegend=False,
-            ), row=2, col=1)
-        fig.add_hline(y=ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
-        fig.add_hline(y=-ci, line=dict(color="#e74c3c", dash="dash"), row=2, col=1)
-        fig.add_hline(y=0, line=dict(color="white", width=0.5), row=2, col=1)
-
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#1a2028",
-            plot_bgcolor="#1a2028",
-            height=460,
-            margin=dict(l=40, r=40, t=50, b=40),
-        )
-        fig.update_xaxes(gridcolor="#2a3038", title="Lag (hari)")
-        fig.update_yaxes(gridcolor="#2a3038")
-        return fig
+    img_dir = Path(__file__).parent.parent / "data"
 
     st.markdown("#### 1. Data Mentah (sebelum differencing)")
-    raw_series = df["Gold_IDR_gram"].dropna()
-    st.plotly_chart(plot_acf_pacf(raw_series, "Data Mentah", "#4a90e2", "#2ecc71"), use_container_width=True)
+    raw_img = img_dir / "acf_pacf.png"
+    if raw_img.exists():
+        st.image(str(raw_img), use_container_width=True)
+    else:
+        st.warning("Gambar `acf_pacf.png` tidak ditemukan di folder `data/`. Upload hasil `plt.savefig('acf_pacf.png')` dari notebook.")
     st.info("""
     ACF turun lambat (*slow decay*) dan PACF *cut-off* tajam di lag-1 → pola khas **random walk**,
     mengindikasikan **non-stasioneritas** (sudah dikonfirmasi via ADF test di tab sebelumnya).
@@ -283,8 +243,11 @@ with tab4:
 
     st.markdown("")
     st.markdown("#### 2. Setelah Differencing")
-    diff_series = df["Gold_IDR_gram"].diff().dropna()
-    st.plotly_chart(plot_acf_pacf(diff_series, "Differencing (stasioner)", "#f5c441", "#e24b4a"), use_container_width=True)
+    diff_img = img_dir / "acf_pacf_diff.png"
+    if diff_img.exists():
+        st.image(str(diff_img), use_container_width=True)
+    else:
+        st.warning("Gambar `acf_pacf_diff.png` tidak ditemukan di folder `data/`. Upload hasil `plt.savefig('acf_pacf_diff.png')` dari notebook.")
     st.success("""
     **Insight — Justifikasi Window Size:**
     - PACF pada differencing menunjukkan **spike signifikan hanya di lag-1**, lag berikutnya berada dalam confidence interval
@@ -293,6 +256,25 @@ with tab4:
     - Validasi empiris (mini grid search) memilih **window=1** sebagai optimal
     - Konsisten dengan teori: setelah memperhitungkan lag-1, kontribusi lag lain tidak signifikan
     """)
+
+    st.markdown("")
+    st.markdown("#### 3. Perbandingan Before vs After")
+    comparison_df = pd.DataFrame({
+        "Aspek": ["Pola ACF", "Pola PACF", "Stasioneritas", "Kegunaan untuk window size"],
+        "Data Mentah": [
+            "Slow decay, tetap tinggi sampai lag jauh",
+            "Cut-off tajam di lag-1",
+            "❌ Non-stasioner",
+            "Tidak valid — dominasi tren",
+        ],
+        "Differencing": [
+            "Langsung masuk confidence band setelah lag-1",
+            "Spike signifikan hanya di lag-1",
+            "✅ Stasioner",
+            "Valid — dasar penentuan window=1",
+        ],
+    })
+    st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
 with tab5:
     st.markdown("### Statistik Deskriptif")
